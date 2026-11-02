@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MS-DOS HTML</title>
+<style>
+:root{--bg:#000;--fg:#aaa;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.15 "Perfect DOS VGA 437",Consolas,"Courier New",monospace;padding:8px;min-height:100vh}
+pre{margin:0;font:inherit;white-space:pre-wrap;word-break:break-all}
+#l{white-space:pre-wrap;word-break:break-all}
+#c{animation:b 1s steps(1) infinite}@keyframes b{50%{opacity:0}}
+#h{position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;border:0}
+#gm{position:fixed;inset:0;background:#000;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:9;color:#777}
+#g{width:min(100vw,160vh);height:auto;image-rendering:pixelated;border:1px solid #333}
+</style></head><body>
+<pre id="o"></pre><div id="l"><span id="p"></span><span id="i"></span><span id="c">█</span></div>
+<input id="h" autocapitalize="off" autocomplete="off" spellcheck="false">
+<div id="gm"><canvas id="g" width="640" height="400"></canvas><div>ESC = EXIT TO DOS</div></div>
+<script>
+const $=i=>document.getElementById(i),o=$('o'),inp=$('h'),c2=$('g').getContext('2d');
+let cap=null,stdin=null,pend=null,kp=null,busy=1,gm=null,pre='',hist=[],hi=0,echo=1,lvl=0,bat=null,drv='C';
+const cwd={C:[],A:[]},lab={C:'MS-DOS_6',A:''},env={PATH:'C:\\DOS;C:\\GAMES',PROMPT:'$P$G',COMSPEC:'C:\\COMMAND.COM',TEMP:'C:\\DOS'};
+const pad=(s,n)=>String(s).padEnd(n),rp=(s,n)=>String(s).padStart(n),sl=ms=>new Promise(r=>setTimeout(r,ms)),nf=n=>n.toLocaleString('en-US');
+const d2=n=>String(n).padStart(2,'0'),fd=d=>d2(d.getMonth()+1)+'-'+d2(d.getDate())+'-'+d2(d.getFullYear()%100),ft=d=>{let H=d.getHours();return rp(H%12||12,2)+':'+d2(d.getMinutes())+(H<12?'a':'p')};
+const T0=new Date(1993,8,30,6,20),F=(d,s,x)=>({t:'f',d,s:s??d.length,m:T0,a:'',x}),Dr=(c,m)=>({t:'d',c,m:m||T0});
+const ex=s=>Object.fromEntries(s.split(' ').map(x=>{const[a,b]=x.split(':');return[a,F('',+b)]})),G=(n,s)=>F('',s,n);
+const FS={C:Dr({'COMMAND.COM':F('',54619),'IO.SYS':F('',40470),'MSDOS.SYS':F('',38138),
+'AUTOEXEC.BAT':F('@ECHO OFF\nPROMPT $P$G\nPATH C:\\DOS;C:\\GAMES\nSET TEMP=C:\\DOS\n'),
+'CONFIG.SYS':F('DEVICE=C:\\DOS\\HIMEM.SYS\nDEVICE=C:\\DOS\\EMM386.EXE NOEMS\nDOS=HIGH,UMB\nFILES=40\nBUFFERS=20\n'),
+'README.TXT':F('Welcome to MS-DOS HTML!\n\nType HELP for the command list.\nGames in C:\\GAMES: SNAKE, TETRIS, PONG, INVADERS, BREAKOUT, GUESS\nPress ESC to exit a game.\n'),
+DOS:Dr(ex('FORMAT.COM:22974 MEM.EXE:39066 EDIT.COM:413 QBASIC.EXE:254 SCANDISK.EXE:223106 DEFRAG.EXE:79361 HIMEM.SYS:29271 EMM386.EXE:120926 XCOPY.EXE:15820 ATTRIB.EXE:11208 DEBUG.EXE:20634 MSD.EXE:158470 HELP.COM:413')),
+GAMES:Dr({'SNAKE.EXE':G('snake',31744),'TETRIS.EXE':G('tetris',48210),'PONG.EXE':G('pong',22016),'INVADERS.EXE':G('invaders',51200),'BREAKOUT.EXE':G('breakout',40960),'GUESS.EXE':G('guess',4096)})}),A:Dr({})};
+const rx=p=>p=='*.*'||p=='*'?/.*/:new RegExp('^'+p.replace(/\./g,'\\.').replace(/\*/g,'.*').replace(/\?/g,'.')+'$');
+function norm(p){p=p.replace(/\//g,'\\');let d=drv;if(/^[A-Za-z]:/.test(p)){d=p[0].toUpperCase();p=p.slice(2)}if(!FS[d])return null;
+ const parts=p[0]=='\\'?[]:[...cwd[d]];for(const s of p.split('\\')){if(!s||s=='.')continue;if(s=='..')parts.pop();else parts.push(s.toUpperCase())}return{d,parts}}
+function get(p){const n=norm(p);if(!n)return null;let x=FS[n.d];for(const s of n.parts){if(!x.c||!x.c[s])return{...n,node:null};x=x.c[s]}return{...n,node:x}}
+const par=n=>{let x=FS[n.d];for(const s of n.parts.slice(0,-1)){x=x.c&&x.c[s];if(!x||x.t!='d')return null}return x};
+function glob(p){const n=norm(p);if(!n)return null;const r=get(p);
+ if(r.node&&r.node.t=='d')return{n,dirNode:r.node,parts:n.parts,ents:Object.entries(r.node.c)};
+ const pa=par(n);if(!pa)return{n,dirNode:null,ents:[]};const pat=n.parts.at(-1)||'*',re=rx(pat);
+ return{n,dirNode:pa,parts:n.parts.slice(0,-1),pat,ents:Object.entries(pa.c).filter(([k])=>re.test(k))}}
+function put(p,nd,ap){const n=norm(p);if(!n||!n.parts.length)return 0;const pa=par(n);if(!pa)return 0;const k=n.parts.at(-1),e=pa.c[k];if(e&&e.t=='d')return 0;
+ if(e&&ap){e.d+=nd.d;e.s=e.d.length}else pa.c[k]={...nd,m:new Date()};return 1}
+const wr=(p,d,ap)=>put(p,F(d),ap),rd=p=>{const r=get(p);return r&&r.node&&r.node.t=='f'?r.node.d:null};
+const mkd=p=>{const n=norm(p);if(!n||!n.parts.length)return 0;const pa=par(n);if(!pa)return 0;const k=n.parts.at(-1);if(pa.c[k])return 0;pa.c[k]=Dr({},new Date());return 1};
+const sz=n=>Object.values(n.c).reduce((s,v)=>s+(v.t=='d'?sz(v):v.s),0),tot=d=>d=='A'?1457664:516000000,free=d=>tot(d)-sz(FS[d]);
+const cur=()=>drv+':\\'+cwd[drv].join('\\');
+const pr=()=>env.PROMPT.replace(/\$(.)/g,(m,c)=>({P:cur(),p:cur(),G:'>',g:'>',L:'<',N:drv,n:drv,D:new Date().toDateString(),T:new Date().toLocaleTimeString(),V:'MS-DOS Version 6.22',$:'$',_:'\n',B:'|',Q:'='})[c]??'');
+const out=t=>{if(cap)cap.push(t);else{o.append(t);if(o.textContent.length>90000)o.textContent=o.textContent.slice(-60000);render()}};
+const render=()=>{$('p').textContent=pre;$('i').textContent=inp.value;scrollTo(0,1e9)},cls=()=>{o.textContent=''};
+const ask=p=>new Promise(r=>{pre=p||'';render();pend=r}),key=()=>new Promise(r=>{kp=r});
+// ---------- DOC ----------
+const DOC={};`APPEND:Sets a search path for data files|ASSIGN:Redirects disk drive requests|ATTRIB:Displays or changes file attributes|BACKUP:Backs up files to disks|BREAK:Sets Ctrl+C checking|BUFFERS:Sets disk buffers (CONFIG.SYS)|CALL:Calls one batch program from another|CD:Displays or changes the current directory|CHCP:Displays or sets the active code page|CHDIR:Same as CD|CHKDSK:Checks a disk and shows a status report|CHOICE:Prompts for a choice in a batch program|CLS:Clears the screen|COMMAND:Starts a new command interpreter|COMP:Compares the contents of two files|COPY:Copies one or more files|COUNTRY:Country settings (CONFIG.SYS)|CTTY:Changes the terminal device|DATE:Displays or sets the date|DBLSPACE:Compresses disks|DEBUG:Runs Debug, a testing and editing tool|DEFRAG:Reorganizes files on a disk|DEL:Deletes one or more files|DELOLDOS:Deletes old MS-DOS files|DELTREE:Deletes a directory and all its contents|DEVICE:Loads a device driver (CONFIG.SYS)|DEVICEHIGH:Loads a driver into upper memory (CONFIG.SYS)|DIR:Displays files and subdirectories|DISKCOMP:Compares two floppy disks|DISKCOPY:Copies a floppy disk|DOSKEY:Edits command lines and recalls commands|DOSSHELL:Starts the MS-DOS Shell|DRIVPARM:Defines drive parameters (CONFIG.SYS)|ECHO:Displays messages or turns echo on/off|EDIT:Starts the MS-DOS text editor|EMM386:Expanded memory emulator|ERASE:Same as DEL|EXE2BIN:Converts EXE files to binary|EXIT:Quits (reboots) the command interpreter|EXPAND:Expands compressed files|FASTHELP:Lists brief command help|FASTOPEN:Speeds access to frequently used files|FC:Compares two files and shows differences|FCBS:Sets file control blocks (CONFIG.SYS)|FDISK:Configures a hard disk|FILES:Sets number of open files (CONFIG.SYS)|FIND:Searches for text in files|FOR:Runs a command for each item in a set|FORMAT:Formats a disk|GOTO:Directs a batch program to a label|GRAPHICS:Loads a graphics screen-print program|HELP:Provides help on MS-DOS commands|HIMEM:Extended memory manager|IF:Conditional processing in batch programs|INCLUDE:Includes a config block (CONFIG.SYS)|INSTALL:Loads a resident program (CONFIG.SYS)|INTERLNK:Connects two computers by cable|INTERSVR:Starts the Interlnk server|JOIN:Joins a drive to a directory|KEYB:Configures a keyboard layout|LABEL:Creates or changes a disk label|LASTDRIVE:Sets last drive letter (CONFIG.SYS)|LH:Loads a program into upper memory|LOADFIX:Loads a program above the first 64K|LOADHIGH:Loads a program into upper memory|MD:Creates a directory|MEM:Displays memory usage|MEMMAKER:Optimizes memory use|MENUCOLOR:Sets menu colors (CONFIG.SYS)|MENUDEFAULT:Sets default menu item (CONFIG.SYS)|MENUITEM:Defines a menu item (CONFIG.SYS)|MKDIR:Same as MD|MODE:Configures system devices|MORE:Displays output one screen at a time|MOVE:Moves or renames files and directories|MSAV:Scans for viruses|MSBACKUP:Backs up or restores files|MSCDEX:Provides CD-ROM access|MSD:Displays system information|NLSFUNC:Loads country information|NUMLOCK:Sets NumLock (CONFIG.SYS)|PATH:Displays or sets a search path|PAUSE:Suspends processing of a batch file|POWER:Reduces power used by applications|PRINT:Prints a text file|PROMPT:Changes the command prompt|QBASIC:Starts the QBasic interpreter|RD:Removes a directory|REM:Records comments in batch files|REN:Renames a file|RENAME:Same as REN|REPLACE:Replaces files|RESTORE:Restores files saved with BACKUP|RMDIR:Same as RD|SCANDISK:Checks a disk and repairs problems|SET:Displays or sets environment variables|SETUP:Installs MS-DOS|SETVER:Sets the reported MS-DOS version|SHARE:File sharing and locking|SHELL:Specifies the command interpreter (CONFIG.SYS)|SHIFT:Shifts batch parameters|SMARTDRV:Installs a disk cache|SORT:Sorts input|STACKS:Sets stack frames (CONFIG.SYS)|SUBMENU:Defines a submenu (CONFIG.SYS)|SUBST:Associates a path with a drive letter|SWITCHES:Special options (CONFIG.SYS)|SYS:Copies system files to a disk|TIME:Displays or sets the time|TREE:Graphically displays a directory structure|TYPE:Displays a text file|UNDELETE:Recovers deleted files|UNFORMAT:Restores a formatted disk|VER:Displays the MS-DOS version|VERIFY:Verifies that files are written correctly|VOL:Displays a disk label|VSAFE:Monitors for viruses|XCOPY:Copies files and directory trees`.split('|').forEach(x=>{const i=x.indexOf(':');DOC[x.slice(0,i)]=x.slice(i+1)});
+const CFG=new Set('BUFFERS COUNTRY DEVICE DEVICEHIGH DRIVPARM FCBS FILES INCLUDE INSTALL LASTDRIVE MENUCOLOR MENUDEFAULT MENUITEM NUMLOCK SHELL STACKS SUBMENU SWITCHES'.split(' '));
+const SIM={SCANDISK:'Microsoft ScanDisk\n\nChecking media descriptor.. OK\nChecking file allocation tables.. OK\nChecking directory structure.. OK\nChecking file system.. OK\n\nScanDisk found no errors on drive C.\n',DEFRAG:'Microsoft Defragmenter\n\nReading disk... Analyzing... Optimizing...\n[##########] 100%\nDrive C is defragmented (0% fragmentation).\n',MSAV:'Microsoft Anti-Virus\n\nScanning memory and C:\\ ...\nNo viruses found.\n',UNDELETE:'UNDELETE - A delete protection facility\n\nDirectory: '+'C:\\\nThere are no deleted files to recover.\n'};
+// ---------- COMMANDS ----------
+const E=m=>out(m+'\n'),C={};
+C.CLS=async()=>cls();
+C.VER=async()=>out('\nMS-DOS Version 6.22\n\n');
+C.COMMAND=async()=>out('\nMicrosoft(R) MS-DOS(R) Version 6.22\n(C)Copyright Microsoft Corp 1981-1994.\n\n');
+C.ECHO=async(a,s,raw)=>{if(!raw)return E('ECHO is '+(echo?'on':'off'));if(/^off$/i.test(raw))echo=0;else if(/^on$/i.test(raw))echo=1;else out(raw.replace(/^[.:]/,'')+'\n')};
+C.REM=async()=>{};C.BREAK=async()=>E('BREAK is off');C.VERIFY=async()=>E('VERIFY is off');C.DOSKEY=async()=>E('DOSKey installed');C.SHIFT=async()=>{};
+C.PAUSE=async()=>{out('Press any key to continue . . .');await key();out('\n')};
+C.GOTO=async(a)=>{if(bat)bat.go=a[0]||'EOF';else E('GOTO is only valid in batch files')};
+C.CALL=async(a,s,raw)=>exec(raw);C.LOADHIGH=C.LH=C.LOADFIX=async(a,s,raw)=>exec(raw);
+C.PATH=async(a,s,raw)=>{if(!raw)return E('PATH='+(env.PATH||'No Path'));env.PATH=raw==';'?'':raw};
+C.PROMPT=async(a,s,raw)=>{env.PROMPT=raw||'$P$G'};
+C.SET=async(a,s,raw)=>{if(!raw)return Object.entries(env).forEach(([k,v])=>E(k+'='+v));const i=raw.indexOf('=');if(i<0)return E('Environment variable '+raw.toUpperCase()+' not defined');const k=raw.slice(0,i).trim().toUpperCase(),v=raw.slice(i+1);v?env[k]=v:delete env[k]};
+C.DATE=async()=>{const d=new Date();out('Current date is '+['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]+' '+d2(d.getMonth()+1)+'-'+d2(d.getDate())+'-'+d.getFullYear()+'\n');await ask('Enter new date (mm-dd-yy): ');};
+C.TIME=async()=>{const d=new Date(),H=d.getHours();out('Current time is '+(H%12||12)+':'+d2(d.getMinutes())+':'+d2(d.getSeconds())+'.'+d2(d.getMilliseconds()/10|0)+(H<12?'a':'p')+'\n');await ask('Enter new time: ');};
+C.VOL=async(a)=>{const d=a[0]?a[0][0].toUpperCase():drv;if(!FS[d])return E('Invalid drive specification');out('\n Volume in drive '+d+(lab[d]?' is '+lab[d]:' has no label')+'\n Volume Serial Number is 1C4F-2A70\n')};
+C.LABEL=async(a)=>{let d=drv,l=a.join(' ');if(/^[A-Za-z]:/.test(l)){d=l[0].toUpperCase();l=l.slice(2)}if(!l){await C.VOL([d]);l=await ask('Volume label (11 characters, ENTER for none)? ')}lab[d]=l.toUpperCase().slice(0,11)};
+C.CD=async(a,s,raw)=>{if(!raw)return E(cur());const r=get(raw);if(!r)return E('Invalid drive specification');if(!r.node||r.node.t!='d')return E('Invalid directory');cwd[r.d]=r.parts};
+C.MD=async(a)=>{if(!a[0])return E('Required parameter missing');if(!mkd(a[0]))E('Unable to create directory')};
+C.RD=async(a)=>{const r=get(a[0]||'');if(!r||!r.node||r.node.t!='d'||!r.parts.length)return E('Invalid path, not directory,\nor directory not empty');if(Object.keys(r.node.c).length||(r.d==drv&&cwd[drv].join('\\')==r.parts.join('\\')))return E('Invalid path, not directory,\nor directory not empty');delete par(r).c[r.parts.at(-1)]};
+C.DELTREE=async(a)=>{const r=get(a[0]||'');if(!r||!r.node||!r.parts.length)return E('Invalid path');const y=await ask('Delete directory "'+r.parts.at(-1)+'" and all its subdirectories? [yn] ');if(/^y/i.test(y)){delete par(r).c[r.parts.at(-1)];cwd[r.d]=[];E('Deleting '+r.parts.at(-1)+'...')}};
+C.DIR=async(a,sw)=>{const g=glob(a[0]||'.');if(!g)return E('Invalid drive specification');if(!g.dirNode)return E('Path not found');
+ const d=g.n.d,w=sw.includes('/W'),b=sw.includes('/B');let es=[...g.ents].sort((x,y)=>(x[1].t==y[1].t?0:x[1].t=='d'?-1:1)||(x[0]<y[0]?-1:1));
+ if(!g.pat&&g.parts.length)es=[['.',{t:'d',m:g.dirNode.m}],['..',{t:'d',m:T0}],...es];
+ if(!b)out(' Volume in drive '+d+(lab[d]?' is '+lab[d]:' has no label')+'\n Volume Serial Number is 1C4F-2A70\n Directory of '+d+':\\'+g.parts.join('\\')+'\n\n');
+ if(!es.length)return E('File not found');let nfl=0,nd=0,tb=0,c=0;
+ for(const[k,v]of es){if(v.t=='d')nd++;else{nfl++;tb+=v.s}
+  if(b){E(k);continue}if(w){out(pad(v.t=='d'?'['+k+']':k,16)+(++c%5==0?'\n':''));continue}
+  const i=k.lastIndexOf('.'),q=i>0&&k!='..';out(pad(q?k.slice(0,i):k,8)+' '+pad(q?k.slice(i+1):'',3)+' '+(v.t=='d'?pad('<DIR>',14):rp(nf(v.s),14))+' '+fd(v.m)+' '+rp(ft(v.m),6)+'\n')}
+ if(w&&c%5)out('\n');if(!b)out(rp(nfl,9)+' file(s)'+rp(nf(tb),15)+' bytes\n'+rp(nd,9)+' dir(s)'+rp(nf(free(d)),15)+' bytes free\n')};
+C.TYPE=async(a)=>{if(!a[0])return E('Required parameter missing');const t=rd(a[0]);if(t==null)return E('File not found - '+a[0].toUpperCase());out(t.endsWith('\n')||!t?t:t+'\n')};
+C.COPY=async(a)=>{const src=a[0];if(!src)return E('The syntax of the command is incorrect.');let dst=a[1];
+ if(/^con$/i.test(src)){let t='';while(1){const l=await ask('');if(/^(\^Z|\x1a)$/.test(l.trim()))break;t+=l+'\n'}if(!dst||!wr(dst,t))E('Invalid path');else E('        1 file(s) copied');return}
+ const fl=[];for(const s of src.split('+')){const g=glob(s),f=g&&g.dirNode?g.ents.filter(e=>e[1].t=='f'):[];if(!f.length)return E('File not found - '+s.toUpperCase());fl.push(...f)}
+ dst=dst||'.';const r=get(dst);
+ if(src.includes('+')){if(!wr(dst,fl.map(e=>e[1].d).join('')))return E('Invalid path');return E('        1 file(s) copied')}
+ let n=0;for(const[k,v]of fl){const t=r&&r.node&&r.node.t=='d'?dst.replace(/\\$/,'')+'\\'+k:dst;if(put(t,v))n++;else E('Invalid path')}E(rp(n,9)+' file(s) copied')};
+C.XCOPY=async(a,sw)=>{const g=glob(a[0]||'');if(!g||!g.dirNode||!g.ents.length)return E('File not found - '+(a[0]||'').toUpperCase());const dst=a[1]||'.';let n=0;if(!get(dst).node)mkd(dst);
+ const cp=(es,dp)=>{for(const[k,v]of es){if(v.t=='f'){put(dp+'\\'+k,v);n++}else if(sw.includes('/S')||sw.includes('/E')){mkd(dp+'\\'+k);cp(Object.entries(v.c),dp+'\\'+k)}}};cp(g.ents,dst.replace(/\\$/,''));E(rp(n,9)+' File(s) copied')};
+C.MOVE=async(a)=>{const g=glob(a[0]||'');if(!g||!g.ents.length||!a[1])return E('File not found - '+(a[0]||'').toUpperCase());const r=get(a[1]);
+ for(const[k,v]of g.ents){const t=r.node&&r.node.t=='d'?a[1].replace(/\\$/,'')+'\\'+k:a[1],n=norm(t),pa=n&&par(n);if(!pa){E('Invalid path');continue}pa.c[n.parts.at(-1)]=v;delete g.dirNode.c[k];E(g.n.d+':\\'+g.parts.concat(k).join('\\')+' => '+t.toUpperCase()+' [ok]')}};
+C.REN=async(a)=>{const g=glob(a[0]||'');if(!g||!g.ents.length||!a[1])return E('Duplicate file name or file not found');
+ for(const[k,v]of g.ents){const b=k.split('.')[0],nk=a[1].includes('*')?a[1].toUpperCase().replace('*.',b+'.').replace('*',b):a[1].toUpperCase();if(g.dirNode.c[nk])return E('Duplicate file name or file not found');g.dirNode.c[nk]=v;delete g.dirNode.c[k]}};
+C.DEL=async(a,sw)=>{const g=glob(a[0]||'');if(!a[0])return E('Required parameter missing');if(!g||!g.dirNode)return E('Path not found');const fl=g.ents.filter(e=>e[1].t=='f');if(!fl.length)return E('File not found');
+ if(/^\*(\.\*)?$/.test(g.pat||'*')){const y=await ask('All files in directory will be deleted!\nAre you sure (Y/N)?');if(!/^y/i.test(y))return}
+ for(const[k,v]of fl){if((v.a||'').includes('R'))E('Access denied - '+k);else delete g.dirNode.c[k]}};
+C.ATTRIB=async(a)=>{const fl=a.filter(x=>/^[+-][RHAS]$/i.test(x)),ps=a.filter(x=>!fl.includes(x)),g=glob(ps[0]||'*.*');if(!g||!g.dirNode)return E('Path not found');if(!g.ents.length)return E('File not found - '+(ps[0]||'*.*').toUpperCase());
+ for(const[k,v]of g.ents){let at=v.a||'';for(const f of fl){const ch=f[1].toUpperCase();at=f[0]=='+'?(at.includes(ch)?at:at+ch):at.replace(ch,'')}v.a=at;const q=ch=>at.includes(ch)?ch:' ';out(q('A')+'  '+q('S')+q('H')+q('R')+'     '+g.n.d+':\\'+g.parts.concat(k).join('\\')+'\n')}};
+C.TREE=async(a)=>{const r=get(a[0]||'.');if(!r||!r.node||r.node.t!='d')return E('Invalid path');out('Directory PATH listing\nVolume serial number is 1C4F-2A70\n'+r.d+':'+(r.parts.length?'\\'+r.parts.join('\\'):'.')+'\n');
+ const w=(nd,pf)=>{const ks=Object.keys(nd.c).filter(k=>nd.c[k].t=='d').sort();ks.forEach((k,i)=>{const l=i==ks.length-1;E(pf+(l?'└───':'├───')+k);w(nd.c[k],pf+(l?'    ':'│   '))})};w(r.node,'');};
+C.FIND=async(a,sw)=>{let s=a[0];if(!s)return E('FIND: Parameter format not correct');s=s.replace(/"/g,'');let L;
+ if(a[1]){const t=rd(a[1]);if(t==null)return E('File not found - '+a[1].toUpperCase());L=t.split('\n');E('\n---------------- '+a[1].toUpperCase())}else L=(stdin||'').split('\n');if(L.at(-1)==='')L.pop();
+ const ic=sw.includes('/I'),v=sw.includes('/V'),r=L.map((l,i)=>[l,i+1]).filter(x=>(ic?x[0].toLowerCase().includes(s.toLowerCase()):x[0].includes(s))!=v);
+ if(sw.includes('/C'))E(r.length);else r.forEach(x=>E((sw.includes('/N')?'['+x[1]+']':'')+x[0]))};
+C.SORT=async(a,sw)=>{const t=a[0]?rd(a[0]):stdin;if(t==null)return E('File not found');const L=t.split('\n').filter((x,i,A)=>x||i<A.length-1).sort((x,y)=>x.localeCompare(y));if(sw.includes('/R'))L.reverse();L.forEach(E)};
+C.MORE=async(a)=>{const t=a[0]?rd(a[0]):stdin;if(t==null)return E('File not found');const L=t.split('\n');for(let i=0;i<L.length;i++){E(L[i]);if((i+1)%22==0&&i<L.length-1){out('-- More --');await key();out('\n')}}};
+C.FC=C.COMP=async(a)=>{const x=rd(a[0]||''),y=rd(a[1]||'');if(x==null||y==null)return E('Cannot open file');E(x===y?'Comparing files '+a[0].toUpperCase()+' and '+a[1].toUpperCase()+'\nFC: no differences encountered':'Comparing files '+a[0].toUpperCase()+' and '+a[1].toUpperCase()+'\n***** Files are different *****')};
+C.CHOICE=async(a,s,raw)=>{let ch='YN';const cm=raw.match(/\/C:?(\w+)/i);if(cm)ch=cm[1].toUpperCase();const t=raw.replace(/\/\S+/g,'').replace(/"/g,'').trim();out((t?t+' ':'')+'['+ch.split('').join(',')+']?');let k;do{k=(await key()).toUpperCase()}while(k.length!=1||!ch.includes(k));E(k);lvl=ch.indexOf(k)+1};
+C.IF=async(a,s,raw)=>{let t=raw,neg=0,r,m;if(/^NOT\s/i.test(t)){neg=1;t=t.slice(4).trim()}
+ if(m=t.match(/^EXIST\s+(\S+)\s+(.*)$/i)){r=!!(get(m[1])||{}).node;t=m[2]}else if(m=t.match(/^ERRORLEVEL\s+(\d+)\s+(.*)$/i)){r=lvl>=+m[1];t=m[2]}
+ else if(m=t.match(/^(\S+?)==(\S*)\s+(.*)$/)){r=m[1].replace(/"/g,'')===m[2].replace(/"/g,'');t=m[3]}else return E('Syntax error');if(r!=neg)await exec(t)};
+C.FOR=async(a,s,raw)=>{const m=raw.match(/^%%?(\w)\s+IN\s+\((.*?)\)\s+DO\s+(.*)$/i);if(!m)return E('Syntax error');const it=[];
+ for(const t of m[2].split(/[\s,]+/).filter(Boolean)){if(/[*?]/.test(t)){const g=glob(t);g&&g.dirNode&&it.push(...g.ents.filter(e=>e[1].t=='f').map(e=>e[0]))}else it.push(t)}
+ for(const x of it)await exec(m[3].replace(new RegExp('%%?'+m[1],'g'),x))};
+C.MEM=async()=>out('\nMemory Type        Total       Used       Free\n----------------  --------   --------   --------\nConventional          640K        48K       592K\nUpper                 155K        27K       128K\nReserved              384K       384K         0K\nExtended (XMS)     15,221K       129K    15,092K\n----------------  --------   --------   --------\nTotal memory       16,400K       588K    15,812K\n\nLargest executable program size      592K (606,224 bytes)\nMS-DOS is resident in the high memory area.\n');
+C.CHKDSK=async()=>{let f=0,d=0;const w=n=>{for(const v of Object.values(n.c)){if(v.t=='d'){d++;w(v)}else f++}};w(FS[drv]);const u=sz(FS[drv]);
+ out('\nVolume '+(lab[drv]||'(none)')+' created 09-30-1993 6:20a\nVolume Serial Number is 1C4F-2A70\n\n'+rp(nf(tot(drv)),14)+' bytes total disk space\n'+rp(nf(u),14)+' bytes in '+f+' files\n'+rp(nf(d*2048),14)+' bytes in '+d+' directories\n'+rp(nf(free(drv)),14)+' bytes available on disk\n\n         2,048 bytes in each allocation unit\n\n'+rp(nf(tot(drv)>>11),14)+' total allocation units on disk\n\n    655,360 total bytes memory\n    606,224 bytes free\n')};
+C.FORMAT=async(a)=>{const d=(a[0]||'')[0]?.toUpperCase();if(!FS[d])return E('Required parameter missing');
+ out(d=='C'?'WARNING, ALL DATA ON NON-REMOVABLE DISK\nDRIVE C: WILL BE LOST!\nProceed with Format (Y/N)?':'Insert new diskette for drive A:\nand press ENTER when ready...');const y=await ask('');
+ if(d=='C'){if(/^y/i.test(y)){E('\nFormat terminated: this is a web simulation, your C: is safe.')}return}
+ for(let i=0;i<=100;i+=20){out('\rFormatting 1.44M '+i+' percent completed.'.replace('\r',''));await sl(150);out('\n')}FS.A=Dr({});E('Format complete.\n\n   1,457,664 bytes total disk space\n   1,457,664 bytes available on disk')};
+C.SYS=async(a)=>{if(!FS[(a[0]||'')[0]?.toUpperCase()])return E('Invalid drive specification');E('System transferred')};
+C.DEBUG=async()=>{while(1){const l=(await ask('-')).trim().toUpperCase();if(l=='Q')return;if(l=='?')E('assemble     A [address]\ndump         D [range]\nquit         Q');else if(l[0]=='D')E('0B3B:0100  CD 20 FF 9F 00 9A EE FE-1D F0 4F 03 8A 03 17 03   . ........O.....');else if(l)E('^ Error')}};
+C.EDIT=async(a)=>{if(!a[0])return E('Usage: EDIT filename');let t=rd(a[0])||'';cls();out('MS-DOS Editor - '+a[0].toUpperCase()+'\n(Line mode) Type lines to append. ^Z alone = save and exit, ^C alone = discard.\n----------------------------------------------------------------\n'+t);
+ while(1){const l=await ask('');if(/^\^Z$/i.test(l.trim())){wr(a[0],t)||E('Cannot save file');break}if(/^\^C$/i.test(l.trim()))break;t+=l+'\n'}cls()};
+C.HELP=async(a)=>{if(a[0]){const n=a[0].toUpperCase();return E(DOC[n]?n+' - '+DOC[n]+'\nSyntax: '+n+' [options]':'This command is not supported by the help utility.')}
+ E('For more information on a specific command, type HELP command-name.\nGames: C:\\GAMES (SNAKE TETRIS PONG INVADERS BREAKOUT GUESS)\n');const k=Object.keys(DOC);for(let i=0;i<k.length;i+=6)E(k.slice(i,i+6).map(x=>pad(x,12)).join(''))};
+C.FASTHELP=C.HELP;
+C.EXIT=async()=>{E('\nRebooting...');await sl(900);drv='C';cwd.C=[];cwd.A=[];await boot()};
+Object.assign(C,{CHDIR:C.CD,MKDIR:C.MD,RMDIR:C.RD,ERASE:C.DEL,RENAME:C.REN});
+// ---------- EXEC ----------
+async function run(line){line=line.replace(/%(\w+)%/g,(m,v)=>env[v.toUpperCase()]??'');const segs=line.split('|');let inp2=null;
+ for(let i=0;i<segs.length;i++){let s=segs[i].trim(),red=null,ap=0,m;if(m=s.match(/(>>?)\s*(\S+)\s*$/)){red=m[2];ap=m[1]=='>>';s=s.slice(0,m.index).trim()}
+  cap=(i<segs.length-1||red)?[]:null;stdin=inp2;try{await exec(s)}finally{const r=cap;cap=null;inp2=r?r.join(''):null;if(red&&!wr(red,inp2||'',ap))E('Invalid path')}}stdin=null}
+async function exec(s){s=s.trim().replace(/^@/,'');if(!s||s[0]==':')return;let m=s.match(/^([A-Za-z]:)$/);
+ if(m){const d=m[1][0].toUpperCase();if(!FS[d])return E('Invalid drive specification');drv=d;return}
+ m=s.match(/^([A-Za-z0-9_$]+)([\s\S]*)$/);const name=m?m[1].toUpperCase():'',rest=m?m[2].trim():'';
+ if(m&&(C[name]||DOC[name])){const t=rest.match(/"[^"]*"|\S+/g)||[],a=t.filter(x=>x[0]!='/'),sw=t.filter(x=>x[0]=='/').map(x=>x.toUpperCase());
+  if(sw.includes('/?')){return E((DOC[name]||name)+'\nSyntax: '+name+' [options]')}
+  if(C[name])return C[name](a,sw,rest);
+  if(CFG.has(name))return E('Command only valid in CONFIG.SYS');
+  return out(SIM[name]||name+': '+DOC[name]+'\n(simulated) Completed successfully.\n')}
+ const tok=s.split(/\s+/)[0];await prog(tok,s.slice(tok.length).trim())}
+async function prog(tok,rest){const hasP=/[\\:]/.test(tok),dirs=hasP?['']:['.',...env.PATH.split(';').filter(Boolean)];
+ for(const d of dirs)for(const e of ['','.COM','.EXE','.BAT']){if(e===''&&!/\.\w+$/.test(tok))continue;const r=get((d&&!hasP?d+'\\':'')+tok+e);
+  if(r&&r.node&&r.node.t=='f'){const nm=r.parts.at(-1);if(nm.endsWith('.BAT'))return runBat(r.node.d.split('\n'),[nm,...(rest.match(/\S+/g)||[])]);
+   if(r.node.x=='guess')return guess();if(r.node.x)return play(r.node.x);const b=nm.replace(/\.\w+$/,'');if(C[b])return C[b]([],[],'');return E('Program too big to fit in memory')}}
+ E('Bad command or file name')}
+async function runBat(L,args){const sv=bat,se=echo,lb={};L.forEach((l,i)=>{const m=l.trim().match(/^:(\S+)/);if(m)lb[m[1].toUpperCase()]=i});bat={go:null};let i=0;
+ while(i<L.length){let l=L[i++].replace(/\r/,'').replace(/%([0-9])/g,(m,n)=>args[n]??'');const q=l.trim();if(!q||q[0]==':'||/^@?REM\b/i.test(q))continue;
+  if(echo&&q[0]!='@'&&!/^ECHO\s+OFF/i.test(q))E(pr()+q);await run(q);
+  if(bat.go){const t=bat.go.toUpperCase();bat.go=null;if(t=='EOF')break;if(t in lb)i=lb[t]+1;else{E('Label not found');break}}}bat=sv;echo=se}
+// ---------- GAMES ----------
+async function guess(){const n=1+Math.random()*100|0;let t=0;E('\nGUESS THE NUMBER\nI am thinking of a number between 1 and 100.\n');
+ while(1){const g=parseInt(await ask('Your guess? '));if(isNaN(g)){E('Please type a number.');continue}t++;if(g<n)E('Too low!');else if(g>n)E('Too high!');else{E('*** CORRECT in '+t+' tries! ***\n');return}}}
+const R=(x,y,w,h,f)=>{c2.fillStyle=f;c2.fillRect(x,y,w,h)},TX=(s,x,y,f='#aaa')=>{c2.fillStyle=f;c2.font='16px monospace';c2.fillText(s,x,y)},CL=()=>R(0,0,640,400,'#000'),GO=()=>TX('GAME OVER - PRESS ENTER',210,200,'#f55');
+const DR={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]};
+const GM={
+snake(){let s,d,n,sc,dead,f;const nf_=()=>{do{f=[Math.random()*32|0,Math.random()*20|0]}while(s.some(p=>p[0]==f[0]&&p[1]==f[1]))},init=()=>{s=[[10,10],[9,10],[8,10]];d=n=[1,0];sc=0;dead=0;nf_()};init();
+ return{ms:90,t(){if(!dead){d=n;const h=[s[0][0]+d[0],s[0][1]+d[1]];if(h[0]<0||h[1]<0||h[0]>31||h[1]>19||s.some(p=>p[0]==h[0]&&p[1]==h[1]))dead=1;else{s.unshift(h);if(h[0]==f[0]&&h[1]==f[1]){sc+=10;nf_()}else s.pop()}}
+  CL();s.forEach(p=>R(p[0]*20,p[1]*20,19,19,'#5f5'));R(f[0]*20,f[1]*20,19,19,'#f55');TX('SNAKE  SCORE '+sc,8,16);if(dead)GO()},
+  k(k){if(k=='Enter'&&dead)init();const v=DR[k];if(v&&!(v[0]==-d[0]&&v[1]==-d[1]))n=v}}},
+tetris(){const S=[[[1,1,1,1]],[[1,1],[1,1]],[[0,1,0],[1,1,1]],[[0,1,1],[1,1,0]],[[1,1,0],[0,1,1]],[[1,0,0],[1,1,1]],[[0,0,1],[1,1,1]]],CO=['#0ff','#ff0','#a0f','#0f0','#f33','#55f','#fa0'];let b,p,x,y,col,sc,dead;
+ const ok=(m,px,py)=>m.every((r,j)=>r.every((v,i)=>!v||(px+i>=0&&px+i<10&&py+j<20&&!(py+j>=0&&b[py+j][px+i])))),nw=()=>{const i=Math.random()*7|0;p=S[i];col=CO[i];x=3;y=0;if(!ok(p,x,y))dead=1},
+ init=()=>{b=Array.from({length:20},()=>Array(10).fill(0));sc=0;dead=0;nw()},
+ drop=()=>{if(ok(p,x,y+1))y++;else{p.forEach((r,j)=>r.forEach((v,i)=>v&&(b[y+j][x+i]=col)));b=b.filter(r=>r.some(v=>!v));sc+=(20-b.length)*100;while(b.length<20)b.unshift(Array(10).fill(0));nw()}},
+ dw=()=>{CL();R(218,0,204,400,'#111');b.forEach((r,j)=>r.forEach((v,i)=>v&&R(220+i*20,j*20,19,19,v)));if(!dead)p.forEach((r,j)=>r.forEach((v,i)=>v&&R(220+(x+i)*20,(y+j)*20,19,19,col)));TX('TETRIS',8,20);TX('SCORE '+sc,8,44);TX('←→ move  ↑ rotate  ↓ drop',8,380);if(dead)GO()};init();
+ return{ms:450,t(){if(!dead)drop();dw()},k(k){if(k=='Enter'&&dead)init();if(dead)return;if(k=='ArrowLeft'&&ok(p,x-1,y))x--;if(k=='ArrowRight'&&ok(p,x+1,y))x++;if(k=='ArrowDown')drop();
+  if(k=='ArrowUp'){const q=p[0].map((_,i)=>p.map(r=>r[i]).reverse());if(ok(q,x,y))p=q}dw()}}},
+pong(){let py=170,cy=170,bx,by,vx,vy,a=0,b=0;const rs=d=>{bx=320;by=200;vx=d*5;vy=Math.random()*4-2};rs(1);
+ return{ms:16,t(){bx+=vx;by+=vy;if(by<0||by>392)vy=-vy;cy+=Math.sign(by-cy-30)*3.5;
+  if(bx<30&&bx>16&&vx<0&&by>py-8&&by<py+68){vx=Math.min(11,-vx*1.05);vy+=(by-py-30)/9}if(bx>610&&bx<624&&vx>0&&by>cy-8&&by<cy+68)vx=-vx*1.03;
+  if(bx<0){b++;rs(1)}if(bx>640){a++;rs(-1)}CL();for(let i=0;i<400;i+=20)R(318,i,4,10,'#444');R(20,py,10,60,'#fff');R(610,cy,10,60,'#fff');R(bx,by,8,8,'#fff');TX('YOU '+a+'     CPU '+b,250,24)},
+  k(k){if(k=='ArrowUp')py=Math.max(0,py-30);if(k=='ArrowDown')py=Math.min(340,py+30)}}},
+invaders(){let al,dx,px,bl,eb,sc,dead,tk;const init=()=>{al=[];for(let r=0;r<4;r++)for(let i=0;i<10;i++)al.push([60+i*44,40+r*32]);dx=8;px=300;bl=null;eb=[];dead=0;tk=0},rst=()=>{init();sc=0};rst();
+ return{ms:40,t(){if(!dead){tk++;if(tk%Math.max(3,al.length/3|0)==0){if(al.some(a=>a[0]+dx<10||a[0]+dx>610)){al.forEach(a=>a[1]+=16);dx=-dx}else al.forEach(a=>a[0]+=dx)}
+  if(bl){bl[1]-=10;const h=al.findIndex(a=>Math.abs(a[0]-bl[0])<16&&Math.abs(a[1]-bl[1])<12);if(h>=0){al.splice(h,1);bl=null;sc+=10}else if(bl[1]<0)bl=null}
+  if(al.length&&Math.random()<.04){const a=al[Math.random()*al.length|0];eb.push([a[0],a[1]])}eb.forEach(e=>e[1]+=6);eb=eb.filter(e=>e[1]<400);
+  if(eb.some(e=>e[1]>360&&Math.abs(e[0]-px)<18)||al.some(a=>a[1]>340))dead=1;if(!al.length){const w=sc;init();sc=w}}
+  CL();al.forEach(a=>{R(a[0]-12,a[1],24,14,'#5f5');R(a[0]-7,a[1]+4,4,4,'#000');R(a[0]+3,a[1]+4,4,4,'#000')});R(px-16,370,32,10,'#5af');R(px-3,362,6,8,'#5af');if(bl)R(bl[0]-1,bl[1],3,10,'#fff');eb.forEach(e=>R(e[0]-1,e[1],3,10,'#f55'));TX('INVADERS  SCORE '+sc+'   ←→ move, SPACE fire',8,16);if(dead)GO()},
+  k(k){if(k=='Enter'&&dead)rst();if(k=='ArrowLeft')px=Math.max(16,px-14);if(k=='ArrowRight')px=Math.min(624,px+14);if(k==' '&&!bl&&!dead)bl=[px,360]}}},
+breakout(){let br,px,bx,by,vx,vy,sc,dead;const init=()=>{br=[];for(let r=0;r<5;r++)for(let i=0;i<10;i++)br.push([i*64,40+r*20,['#f55','#fa5','#ff5','#5f5','#5af'][r]]);px=280;bx=320;by=300;vx=3;vy=-4;sc=0;dead=0};init();
+ return{ms:16,t(){if(!dead){bx+=vx;by+=vy;if(bx<0||bx>632)vx=-vx;if(by<0)vy=-vy;if(by>360&&by<372&&bx>px-8&&bx<px+88&&vy>0){vy=-vy;vx=(bx-px-40)/10}
+  const i=br.findIndex(q=>bx+8>q[0]&&bx<q[0]+62&&by+8>q[1]&&by<q[1]+18);if(i>=0){br.splice(i,1);vy=-vy;sc+=10}if(by>400)dead=1;if(!br.length)init()}
+  CL();br.forEach(q=>R(q[0]+1,q[1],62,18,q[2]));R(px,370,80,10,'#fff');R(bx,by,8,8,'#fff');TX('BREAKOUT  SCORE '+sc,8,16);if(dead)GO()},
+  k(k){if(k=='Enter'&&dead)init();if(k=='ArrowLeft')px=Math.max(0,px-28);if(k=='ArrowRight')px=Math.min(560,px+28)}}}};
+function play(n){return new Promise(res=>{$('gm').style.display='flex';const g=GM[n]();g.end=()=>{clearInterval(g.iv);gm=null;$('gm').style.display='none';res()};g.iv=setInterval(g.t,g.ms);gm=g;g.t()})}
+// ---------- INPUT ----------
+async function enter(){const v=inp.value;inp.value='';
+ if(pend){out(pre+v+'\n');const f=pend;pend=null;pre='';f(v);return}
+ if(busy)return;out(pr()+v+'\n');if(v.trim())hist.push(v);hi=hist.length;busy=1;pre='';render();
+ try{await run(v)}catch(e){out('Internal error: '+e.message+'\n')}busy=0;pre=pr();render()}
+addEventListener('keydown',e=>{
+ if(gm){e.preventDefault();e.key=='Escape'?gm.end():gm.k(e.key);return}
+ if(kp){e.preventDefault();if(e.key.length==1||e.key=='Enter'||e.key=='Escape'){const f=kp;kp=null;f(e.key=='Enter'?'\r':e.key)}return}
+ if(document.activeElement!=inp)inp.focus();
+ if(e.ctrlKey&&e.key=='c'){out(pre+inp.value+'^C\n');inp.value='';if(pend){const f=pend;pend=null;f('^C')}e.preventDefault();render()}
+ else if(e.key=='Enter'){e.preventDefault();enter()}
+ else if(e.key=='Escape'){inp.value='';render()}
+ else if(e.key=='ArrowUp'&&!pend){e.preventDefault();if(hi>0)inp.value=hist[--hi];render()}
+ else if(e.key=='ArrowDown'&&!pend){e.preventDefault();inp.value=hist[++hi]||'';if(hi>hist.length)hi=hist.length;render()}});
+inp.addEventListener('input',render);addEventListener('click',()=>inp.focus());
+async function boot(){cls();busy=1;pre='';render();
+ for(const l of ['Starting MS-DOS...','','HIMEM is testing extended memory...done.','','Microsoft(R) MS-DOS(R) Version 6.22','(C)Copyright Microsoft Corp 1981-1994.','','Type HELP for commands. Games: C:\\GAMES (SNAKE, TETRIS, PONG,\nINVADERS, BREAKOUT, GUESS). Try: DIR, TREE, TYPE README.TXT','']){out(l+'\n');await sl(l?140:50)}
+ pre=pr();busy=0;render();inp.focus()}
+boot();
+</script></body></html>
